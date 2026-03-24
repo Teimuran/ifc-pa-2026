@@ -7,20 +7,20 @@ def get_properties_by_global_id(model: ifcopenshell.file, global_id: str) -> dic
         ifc_object = model.by_id(global_id)
 
         if not ifc_object:
-            return {"error": f"Объект с GlobalId '{global_id}' не найден в модели."}
+            return {"error": f"Object with GlobalId '{global_id}' not found in the model."}
 
     except Exception as e:
-        return {"error": f"Сбой при поиске объекта '{global_id}': {str(e)}"}
+        return {"error": f"Failed to find object '{global_id}': {str(e)}"}
 
     gui_data = {
-        "Базовые атрибуты": {},
-        "Наборы свойств (Property Sets)": {}
+        "Base Attributes": {},
+        "Property Sets": {}
     }
 
     raw_attributes = ifc_object.get_info()
     for key, value in raw_attributes.items():
         if value is not None and isinstance(value, (str, int, float, bool)):
-            gui_data["Базовые атрибуты"][key] = value
+            gui_data["Base Attributes"][key] = value
 
     psets = ifcopenshell.util.element.get_psets(ifc_object)
 
@@ -29,6 +29,6 @@ def get_properties_by_global_id(model: ifcopenshell.file, global_id: str) -> dic
             properties.pop('id', None)
 
             if properties:
-                gui_data["Наборы свойств (Property Sets)"][pset_name] = properties
+                gui_data["Property Sets"][pset_name] = properties
 
     return gui_data
