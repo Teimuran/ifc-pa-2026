@@ -3,3 +3,6 @@ gui/venv/
 gui/parse_core/get_data/__pycache__
 gui/004_2-PI-TKM.ifc
 gui/hierarchy_output.json
+project/.venv
+project/core/parse/__pycache__
+project/gui/__pycache__
