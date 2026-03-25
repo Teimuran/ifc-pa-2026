@@ -1,5 +1,10 @@
 from viewport import IFCViewport
 from parse_core.get_data.get_project_hierarchy import get_project_hierarchy
+from parse_core.get_data.get_element_geometry import get_element_geometry
+
+import os
+os.environ["QT_QPA_PLATFORM"] = "xcb"
+os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
 
 import sys
 import ifcopenshell
@@ -161,15 +166,41 @@ class MainWindow(QMainWindow):
             self.tree.clear()
 
             try:
+                # 1. Загружаем модель
+                self.bottom_panel.append("Чтение IFC файла...")
+                QApplication.processEvents() # Обновляем UI, чтобы не завис
                 model = ifcopenshell.open(file_path)
 
+                # 2. Строим дерево
+                self.bottom_panel.append("Построение дерева проекта...")
+                QApplication.processEvents()
                 hierarchy_list = get_project_hierarchy(model)
-
                 self.__build_tree_ui(hierarchy_list, self.tree)
                 self.tree.expandAll()
-                self.bottom_panel.append("File is loaded and tree is build")
+
+                # 3. Извлекаем 3D-геометрию!
+                self.bottom_panel.append("Генерация 3D геометрии (это может занять время)...")
+                QApplication.processEvents()
+                
+                geom_data = get_element_geometry(model)
+                
+                # Проверяем, не вернула ли функция ошибку
+                if "error" in geom_data:
+                    self.bottom_panel.append(f"Ошибка 3D: {geom_data['error']}")
+                else:
+                    vtm_path = geom_data["file_path"]
+                    elements_count = geom_data["elements_count"]
+                    
+                    self.bottom_panel.append(f"Геометрия создана! Элементов: {elements_count}")
+                    self.bottom_panel.append(f"Файл геометрии: {vtm_path}")
+                    
+                    # 4. ОТПРАВЛЯЕМ ФАЙЛ ВО ВЬЮПОРТ ДЛЯ ОТРИСОВКИ
+                    self.viewport.load_model(vtm_path)
+                    
+                    self.bottom_panel.append("Успех: Модель загружена и отрисована!")
+
             except Exception as e:
-                self.bottom_panel.append(f"Error read file: {e}")
+                self.bottom_panel.append(f"Ошибка чтения файла: {e}")
 
     def closeEvent(self, event):
         """this method called before close app"""

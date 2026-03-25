@@ -6,3 +6,5 @@ use "pip install -r requiremets.txt" for install all uses libraries
 
 advice: use local venv on ur computers and 
 install libraries in venv (and write ur libraries in requirements.txt)
+
+gui - now its main project dir where we merged Gui and Core  
