@@ -2,6 +2,8 @@ from gui.viewport import IFCViewport
 from core.parse.get_project_hierarchy import get_project_hierarchy
 from core.parse.get_element_geometry import get_element_geometry
 from core.parse.get_properties_by_global_id import get_properties_by_global_id
+from core.file.save_file import save_ifc_model
+from core.edit_data.edit_data import update_element_properties
 
 import ifcopenshell
 
@@ -17,10 +19,28 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem
     )
 from PyQt6.QtCore import (
+    QThread,
     Qt,
     QSettings,
+    pyqtSignal,
     )
 from PyQt6.QtGui import QAction
+
+class GeometryWorker(QThread):
+    # Создаем сигнал, который вернет словарь (dict) с результатами, когда закончит работу
+    finished_signal = pyqtSignal(dict)
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def run(self):
+        # Всё, что находится внутри метода run(), выполняется в отдельном потоке!
+        # Сюда мы переносим вашу тяжелую функцию
+        geom_data = get_element_geometry(self.model)
+        
+        # Когда генерация закончена, отправляем данные обратно в главное окно
+        self.finished_signal.emit(geom_data)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -63,7 +83,7 @@ class MainWindow(QMainWindow):
         self.bottom_panel.setPlaceholderText("Place for logs")
 
         self.property_tree = QTreeWidget()
-        self.property_tree.setHeaderLabels(["Propery", "value"])
+        self.property_tree.setHeaderLabels(["Property", "Value"])
         self.property_tree.setAlternatingRowColors(True)
 
         # add plugs to splitter
@@ -125,14 +145,41 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("File")
 
         open_action = QAction("Open", self)
+        save_action = QAction("Save", self)
         exit_action = QAction("Exit", self)
         
 
         exit_action.triggered.connect(self.close)
         open_action.triggered.connect(self.__open_file)
+        save_action.triggered.connect(self.__save_file)
 
         file_menu.addAction(open_action)
+        file_menu.addAction(save_action)
         file_menu.addAction(exit_action)
+
+    def __save_file(self):
+        # Проверяем, есть ли что сохранять
+        if not hasattr(self, 'model'):
+            self.bottom_panel.append("Ошибка: Нет открытого файла для сохранения.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save IFC Model",
+            "",
+            "IFC Files (*.ifc)"
+        )
+
+        if file_path:
+            self.bottom_panel.append(f"Сохранение в {file_path}...")
+            # Вызываем функцию из core
+            result = save_ifc_model(self.model, file_path)
+            
+            if result.get("success"):
+                self.bottom_panel.append(f"Успех: Файл сохранен -> {result['path']}")
+            else:
+                self.bottom_panel.append(f"Ошибка сохранения: {result.get('error')}")
+
 
     def __restore_settings(self):
         """mehtod for save size window and splitters"""
@@ -159,72 +206,85 @@ class MainWindow(QMainWindow):
         self.bottom_panel.append(f"--Hide Type: {ifc_type}")
 
     def __on_tree_double_click(self, item, column):
-        display_text = item.text(column)
-
+        display_text = item.text(0)
         global_id = item.data(0, Qt.ItemDataRole.UserRole)
 
         if not hasattr(self, 'model'):
             return
         
-        self.bottom_panel.append(f"Download properties for: {display_text}")
+        self.current_global_id = global_id
+
+        self.bottom_panel.append(f"Загрузка свойств для: {display_text}")
 
         self.current_properties = get_properties_by_global_id(self.model, global_id)
 
         self.property_tree.blockSignals(True)
         self.property_tree.clear()
 
-        base_attrs = self.current_properties.get("Base Attributes", {})
-        if base_attrs:
-            base_node = QTreeWidgetItem(self.property_tree, ["Base Attributes", ""])
-
-            for key, value in base_attrs.items():
-                row = QTreeWidgetItem(base_node, [str(key), str(value)])
-
-                row.setFlags(row.flags() | Qt.ItemFlag.ItemIsEditable)
-
-                row.setData(0, Qt.ItemDataRole.UserRole, ("Base Attributes", key))
-
-        psets = self.current_properties.get("Property Sets", {})
-        if psets:
-            psets_node = QTreeWidgetItem(self.property_tree, ["Property Sets", ""])
-
-            for pset_name, pset_props in psets.items():
-                pset_group = QTreeWidgetItem(psets_node, [str(pset_name), ""])
-
-                for key, val in pset_props.items():
-                    row = QTreeWidgetItem(pset_group, [str(key), str(val)])
-
+        # 1. Загружаем "Properties" (Сгруппированные словари, делаем их РЕДАКТИРУЕМЫМИ)
+        props = self.current_properties.get("Properties", {})
+        if props:
+            props_root = QTreeWidgetItem(self.property_tree, ["Properties", ""])
+            
+            for group_name, group_data in props.items():
+                group_node = QTreeWidgetItem(props_root, [str(group_name), ""])
+                
+                for key, value in group_data.items():
+                    row = QTreeWidgetItem(group_node,[str(key), str(value)])
+                    # Делаем значение редактируемым
                     row.setFlags(row.flags() | Qt.ItemFlag.ItemIsEditable)
+                    # Сохраняем путь для изменения в словаре
+                    row.setData(0, Qt.ItemDataRole.UserRole, ("Properties", group_name, key))
 
-                    row.setData(0, Qt.ItemDataRole.UserRole, ("Property Sets", pset_name, key))
+        # 2. Загружаем "Classification" (Список словарей, делаем ТОЛЬКО ДЛЯ ЧТЕНИЯ)
+        classifications = self.current_properties.get("Classification",[])
+        if classifications:
+            class_root = QTreeWidgetItem(self.property_tree, ["Classification", ""])
+            for idx, cls in enumerate(classifications):
+                # Название класса как группа
+                cls_node = QTreeWidgetItem(class_root,[f"Class {idx+1}: {cls.get('Name', '')}", ""])
+                for key, value in cls.items():
+                    QTreeWidgetItem(cls_node,[str(key), str(value)]) # Без флага Editable
+
+        # 3. Загружаем "Relations" (Список словарей, ТОЛЬКО ДЛЯ ЧТЕНИЯ)
+        relations = self.current_properties.get("Relations", [])
+        if relations:
+            rel_root = QTreeWidgetItem(self.property_tree,["Relations", ""])
+            for rel in relations:
+                QTreeWidgetItem(rel_root,[str(rel.get("Type", "")), str(rel.get("Name", ""))])
 
         self.property_tree.expandAll()
         self.property_tree.blockSignals(False)
 
     def __on_property_edited(self, item, column):
-        # Нам интересны только изменения во второй колонке (Value)
         if column != 1:
             return
 
-        # Достаем путь к нашему значению из кармана!
         path = item.data(0, Qt.ItemDataRole.UserRole)
         if not path:
-            return # Если пути нет (это заголовок категории), игнорируем
+            return 
 
         new_value = item.text(1)
 
-        # Обновляем НАШ СЛОВАРЬ (self.current_properties)
-        if len(path) == 2:
-            category, key = path
-            self.current_properties[category][key] = new_value
-        elif len(path) == 3:
-            category, pset_name, key = path
-            self.current_properties[category][pset_name][key] = new_value
-
-        # Выводим в лог подтверждение
-        self.bottom_panel.append(f"[Изменено в памяти] {path[-1]} -> {new_value}")
+        # Новый формат пути: ("Properties", НазваниеГруппы, Ключ)
+        if len(path) == 3 and path[0] == "Properties":
+            _, group_name, key = path
+            self.current_properties["Properties"][group_name][key] = new_value
+            self.bottom_panel.append(f"[Изменено в памяти] {group_name} -> {key} = {new_value}")
         
-        # print("Текущий словарь свойств:", self.current_properties)
+        # 2. ОТПРАВЛЯЕМ ИЗМЕНЕНИЯ В ЯДРО IFC
+        # Вызываем функцию от твоей команды:
+        update_result = update_element_properties(
+            self.model, 
+            self.current_global_id, 
+            self.current_properties
+        )
+
+        # 3. Выводим результат ответа от ядра
+        if update_result.get("success"):
+            self.bottom_panel.append(f"[Core] {update_result['message']}")
+        else:
+            self.bottom_panel.append(f"[Core Error] Не удалось обновить IFC: {update_result.get('error')}")
 
     def __open_file(self):
         file_path, filter_type = QFileDialog.getOpenFileName(
@@ -234,48 +294,46 @@ class MainWindow(QMainWindow):
             "IFC Files (*.ifc);;All Files (*)"
         )
 
-
         if file_path:
             self.bottom_panel.append(f"File selected: {file_path}")
-
             self.tree.clear()
 
             try:
-                # 1. Загружаем модель
                 self.bottom_panel.append("Чтение IFC файла...")
-                QApplication.processEvents() # Обновляем UI, чтобы не завис
+                QApplication.processEvents() 
                 self.model = ifcopenshell.open(file_path)
 
-                # 2. Строим дерево
                 self.bottom_panel.append("Построение дерева проекта...")
                 QApplication.processEvents()
                 hierarchy_list = get_project_hierarchy(self.model)
                 self.__build_tree_ui(hierarchy_list, self.tree)
                 self.tree.expandAll()
 
-                # 3. Извлекаем 3D-геометрию!
-                self.bottom_panel.append("Генерация 3D геометрии (это может занять время)...")
-                QApplication.processEvents()
+                self.bottom_panel.append("Генерация 3D геометрии в фоновом потоке...")
                 
-                geom_data = get_element_geometry(self.model)
-                
-                # Проверяем, не вернула ли функция ошибку
-                if "error" in geom_data:
-                    self.bottom_panel.append(f"Ошибка 3D: {geom_data['error']}")
-                else:
-                    vtm_path = geom_data["file_path"]
-                    elements_count = geom_data["elements_count"]
-                    
-                    self.bottom_panel.append(f"Геометрия создана! Элементов: {elements_count}")
-                    self.bottom_panel.append(f"Файл геометрии: {vtm_path}")
-                    
-                    # 4. ОТПРАВЛЯЕМ ФАЙЛ ВО ВЬЮПОРТ ДЛЯ ОТРИСОВКИ
-                    self.viewport.load_model(vtm_path)
-                    
-                    self.bottom_panel.append("Успех: Модель загружена и отрисована!")
+                # --- ЗАПУСК ПОТОКА ---
+                # Создаем рабочий процесс и передаем ему модель
+                self.geom_worker = GeometryWorker(self.model)
+                # Подписываемся на сигнал: когда поток закончит, он вызовет __on_geometry_loaded
+                self.geom_worker.finished_signal.connect(self.__on_geometry_loaded)
+                # ЗАПУСКАЕМ ПОТОК (метод run() выполнится параллельно)
+                self.geom_worker.start()
 
             except Exception as e:
                 self.bottom_panel.append(f"Ошибка чтения файла: {e}")
+
+    # Этот метод сработает автоматически, когда QThread закончит работу
+    def __on_geometry_loaded(self, geom_data):
+        if "error" in geom_data:
+            self.bottom_panel.append(f"Ошибка 3D: {geom_data['error']}")
+        else:
+            vtm_path = geom_data["file_path"]
+            elements_count = geom_data["elements_count"]
+            
+            self.bottom_panel.append(f"Геометрия создана! Элементов: {elements_count}")
+            # Передаем файл во вьюпорт
+            self.viewport.load_model(vtm_path)
+            self.bottom_panel.append("Успех: Модель загружена и отрисована!")
 
     def closeEvent(self, event):
         """this method called before close app"""

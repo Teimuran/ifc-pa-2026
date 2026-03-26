@@ -6,6 +6,7 @@ def get_project_hierarchy(model: ifcopenshell.file) -> list:
         node_data = {
             "GlobalId": str(entity.GlobalId),
             "Name": str(entity.Name) if getattr(entity, "Name", None) else "Без имени",
+            "Description": str(entity.Description) if getattr(entity, "Description", None) else "",
             "Type": str(entity.is_a()),
             "Children": []
         }
