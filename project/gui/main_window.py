@@ -1,6 +1,7 @@
 from gui.viewport import IFCViewport
 from core.parse.get_project_hierarchy import get_project_hierarchy
 from core.parse.get_element_geometry import get_element_geometry
+from core.parse.get_properties_by_global_id import get_properties_by_global_id
 
 import ifcopenshell
 
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
 
         self.v_splitter = QSplitter(Qt.Orientation.Vertical)
         self.h_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.h_splitter_2 = QSplitter(Qt.Orientation.Horizontal)
 
         # tree, bottom_panel and viewport NOW JUST plugs
         self.tree = QTreeWidget()
@@ -60,12 +62,19 @@ class MainWindow(QMainWindow):
         self.bottom_panel = QTextEdit()
         self.bottom_panel.setPlaceholderText("Place for logs")
 
+        self.property_tree = QTreeWidget()
+        self.property_tree.setHeaderLabels(["Propery", "value"])
+        self.property_tree.setAlternatingRowColors(True)
+
         # add plugs to splitter
         self.h_splitter.addWidget(self.tree)
         self.h_splitter.addWidget(self.viewport)
 
+        self.h_splitter_2.addWidget(self.bottom_panel)
+        self.h_splitter_2.addWidget(self.property_tree)
+
         self.v_splitter.addWidget(self.h_splitter)
-        self.v_splitter.addWidget(self.bottom_panel)
+        self.v_splitter.addWidget(self.h_splitter_2)
 
         # set default size on first open
         self.v_splitter.setSizes([500, 100])
@@ -93,6 +102,9 @@ class MainWindow(QMainWindow):
         self.tree.expandAll()
 
         self.tree.itemClicked.connect(self.__on_tree_click)
+        self.tree.itemDoubleClicked.connect(self.__on_tree_double_click)
+
+        self.property_tree.itemChanged.connect(self.__on_property_edited)
 
     def __build_tree_ui(self, node_list:list, parent_item):
         for node in node_list:
@@ -146,6 +158,74 @@ class MainWindow(QMainWindow):
         self.bottom_panel.append(f"--Hide GloabalId: {global_id}")
         self.bottom_panel.append(f"--Hide Type: {ifc_type}")
 
+    def __on_tree_double_click(self, item, column):
+        display_text = item.text(column)
+
+        global_id = item.data(0, Qt.ItemDataRole.UserRole)
+
+        if not hasattr(self, 'model'):
+            return
+        
+        self.bottom_panel.append(f"Download properties for: {display_text}")
+
+        self.current_properties = get_properties_by_global_id(self.model, global_id)
+
+        self.property_tree.blockSignals(True)
+        self.property_tree.clear()
+
+        base_attrs = self.current_properties.get("Base Attributes", {})
+        if base_attrs:
+            base_node = QTreeWidgetItem(self.property_tree, ["Base Attributes", ""])
+
+            for key, value in base_attrs.items():
+                row = QTreeWidgetItem(base_node, [str(key), str(value)])
+
+                row.setFlags(row.flags() | Qt.ItemFlag.ItemIsEditable)
+
+                row.setData(0, Qt.ItemDataRole.UserRole, ("Base Attributes", key))
+
+        psets = self.current_properties.get("Property Sets", {})
+        if psets:
+            psets_node = QTreeWidgetItem(self.property_tree, ["Property Sets", ""])
+
+            for pset_name, pset_props in psets.items():
+                pset_group = QTreeWidgetItem(psets_node, [str(pset_name), ""])
+
+                for key, val in pset_props.items():
+                    row = QTreeWidgetItem(pset_group, [str(key), str(val)])
+
+                    row.setFlags(row.flags() | Qt.ItemFlag.ItemIsEditable)
+
+                    row.setData(0, Qt.ItemDataRole.UserRole, ("Property Sets", pset_name, key))
+
+        self.property_tree.expandAll()
+        self.property_tree.blockSignals(False)
+
+    def __on_property_edited(self, item, column):
+        # Нам интересны только изменения во второй колонке (Value)
+        if column != 1:
+            return
+
+        # Достаем путь к нашему значению из кармана!
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if not path:
+            return # Если пути нет (это заголовок категории), игнорируем
+
+        new_value = item.text(1)
+
+        # Обновляем НАШ СЛОВАРЬ (self.current_properties)
+        if len(path) == 2:
+            category, key = path
+            self.current_properties[category][key] = new_value
+        elif len(path) == 3:
+            category, pset_name, key = path
+            self.current_properties[category][pset_name][key] = new_value
+
+        # Выводим в лог подтверждение
+        self.bottom_panel.append(f"[Изменено в памяти] {path[-1]} -> {new_value}")
+        
+        # print("Текущий словарь свойств:", self.current_properties)
+
     def __open_file(self):
         file_path, filter_type = QFileDialog.getOpenFileName(
             self,
@@ -164,12 +244,12 @@ class MainWindow(QMainWindow):
                 # 1. Загружаем модель
                 self.bottom_panel.append("Чтение IFC файла...")
                 QApplication.processEvents() # Обновляем UI, чтобы не завис
-                model = ifcopenshell.open(file_path)
+                self.model = ifcopenshell.open(file_path)
 
                 # 2. Строим дерево
                 self.bottom_panel.append("Построение дерева проекта...")
                 QApplication.processEvents()
-                hierarchy_list = get_project_hierarchy(model)
+                hierarchy_list = get_project_hierarchy(self.model)
                 self.__build_tree_ui(hierarchy_list, self.tree)
                 self.tree.expandAll()
 
@@ -177,7 +257,7 @@ class MainWindow(QMainWindow):
                 self.bottom_panel.append("Генерация 3D геометрии (это может занять время)...")
                 QApplication.processEvents()
                 
-                geom_data = get_element_geometry(model)
+                geom_data = get_element_geometry(self.model)
                 
                 # Проверяем, не вернула ли функция ошибку
                 if "error" in geom_data:
