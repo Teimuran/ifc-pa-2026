@@ -460,12 +460,12 @@ class MainWindow(QMainWindow):
         if "error" in geom_data:
             self.bottom_panel.append(f"Ошибка 3D: {geom_data['error']}")
         else:
-            vtm_path = geom_data["dir_path"]
+            brep_path = geom_data["dir_path"]
             elements_count = geom_data["elements_count"]
             
             self.bottom_panel.append(f"Геометрия создана! Элементов: {elements_count}")
             # Передаем файл во вьюпорт
-            self.viewport.load_model(vtm_path)
+            self.viewport.load_model(brep_path)
             self.bottom_panel.append("Успех: Модель загружена и отрисована!")
 
     def closeEvent(self, event):
