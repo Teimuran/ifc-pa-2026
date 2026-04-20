@@ -1,7 +1,5 @@
 import ifcopenshell
 import ifcopenshell.geom
-import numpy as np
-import pyvista as pv
 import tempfile
 import multiprocessing
 from pathlib import Path
@@ -72,7 +70,7 @@ def get_element_geometry(model: ifcopenshell.file) -> dict:
         print(f"Successfully generated {elements_count} B-Rep files.")
 
         return {
-            "file_path": str(cache_folder),
+            "dir_path": str(cache_folder),
             "elements_count": elements_count
         }
 
