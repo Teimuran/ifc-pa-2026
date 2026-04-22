@@ -153,6 +153,8 @@ class MainWindow(QMainWindow):
 
         self.property_tree.itemChanged.connect(self.__on_property_edited)
 
+        self.viewport.element_selected_signal.connect(self.__on_viewport_element_selected)
+
     def __build_tree_ui(self, node_list:list, parent_item):
         for node in node_list:
             display_text = f"[{node['Type']}] {node['Name']}"
@@ -366,6 +368,8 @@ class MainWindow(QMainWindow):
 
         if not hasattr(self, 'model'):
             return
+
+        self.viewport.select_and_rotate(global_id)
         
         self.current_global_id = global_id
 
@@ -516,6 +520,35 @@ class MainWindow(QMainWindow):
             # Передаем файл во вьюпорт
             self.viewport.load_model(brep_path)
             self.bottom_panel.append("Успех: Модель загружена и отрисована!")
+
+    def __on_viewport_element_selected(self, global_id):
+        self.bottom_panel.append(f"Выбран элемент из 3D: {global_id}")
+
+        target_item = None
+        for i in range(self.tree.topLevelItemCount()):
+            top_item = self.tree.topLevelItem(i)
+            if top_item.data(0, Qt.ItemDataRole.UserRole) == global_id:
+                target_item = top_item
+                break
+            target_item = self.__find_item_by_guid(top_item, global_id)
+            if target_item:
+                break
+
+        if target_item:
+            self.tree.setCurrentItem(target_item)
+            self.tree.scrollToItem(target_item)
+            self.__on_tree_double_click(target_item, 0)
+
+    def __find_item_by_guid(self, parent_item, guid):
+        """Рекурсивный поиск элемента по дереву"""
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            if child.data(0, Qt.ItemDataRole.UserRole) == guid:
+                return child
+            found = self.__find_item_by_guid(child, guid)
+            if found:
+                return found
+        return None
 
     def closeEvent(self, event):
         """this method called before close app"""
