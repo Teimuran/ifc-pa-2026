@@ -84,12 +84,7 @@ class MainWindow(QMainWindow):
         # load settings (AFTER BUILD ALL WIDGETS)
         self.__restore_settings()
 
-        self.setStyleSheet("""
-            QWidget {
-                background-color: palette(Window);
-                color: palette(WindowText);
-            }
-        """)
+        self.setStyleSheet(self.themes["Dark"])
 
     def __init_ui(self):
         # two main widget
@@ -178,61 +173,115 @@ class MainWindow(QMainWindow):
         settings_menu = menu_bar.addMenu("Settings")
 
         theme_menu = settings_menu.addMenu("Theme")
-        
+
         self.themes = {
-            "Light": "background-color: #f0f0f0; color: black;",
+            "Light": """
+                QMainWindow, QWidget {
+                    background-color: #f3f3f3; /* Светло-серый фон приложения */
+                    color: #333333; /* Темно-серый текст для хорошей читаемости */
+                }
+
+                QTreeView, QTextEdit, QTableView {
+                    background-color: #ffffff; /* Чисто белый фон для данных */
+                    border: 1px solid #cccccc; /* Светлые границы */
+                    gridline-color: #cccccc;
+                }
+
+                QHeaderView::section {
+                    background-color: #e8e8e8; /* Слегка выделенный фон заголовков */
+                    color: #333333;
+                    border: 1px solid #cccccc;
+                    padding: 2px;
+                }
+
+                QPushButton {
+                    background-color: #e4e4e4;
+                    color: #333333;
+                    border: 1px solid #cccccc;
+                    border-radius: 4px;
+                    padding: 4px;
+                }
+
+                QPushButton:hover {
+                    background-color: #ebebeb;
+                    border: 1px solid #b3b3b3;
+                }
+
+                QPushButton:pressed {
+                    background-color: #dadada;
+                }
+
+                QScrollBar:vertical {
+                    border: none;
+                    background: #f3f3f3;
+                    width: 14px;
+                    margin: 0px 0px 0px 0px;
+                }
+                QScrollBar::handle:vertical {
+                    background: #c1c1c1; /* Серый ползунок */
+                    min-height: 20px;
+                    border-radius: 7px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background: #a8a8a8; /* Более темный серый при наведении */
+                }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    border: none;
+                    background: none;
+                }
+            """,
             "Dark": """
                 QMainWindow, QWidget {
-                background-color: #1e1e1e; /* Темно-серый фон */
-                color: #d4d4d4; /* Светло-серый/белый текст */
-            }
+                    background-color: #1e1e1e; /* Темно-серый фон */
+                    color: #d4d4d4; /* Светло-серый/белый текст */
+                }
 
-            QTreeView, QTextEdit, QTableView {
-                background-color: #252526;
-                border: 1px solid #3c3c3c;
-                gridline-color: #3c3c3c;
-            }
+                QTreeView, QTextEdit, QTableView {
+                    background-color: #252526;
+                    border: 1px solid #3c3c3c;
+                    gridline-color: #3c3c3c;
+                }
 
-            QHeaderView::section {
-                background-color: #2d2d30;
-                color: #d4d4d4;
-                border: 1px solid #3c3c3c;
-            }
+                QHeaderView::section {
+                    background-color: #2d2d30;
+                    color: #d4d4d4;
+                    border: 1px solid #3c3c3c;
+                }
 
-            QPushButton {
-                background-color: #333333;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 4px;
-            }
+                QPushButton {
+                    background-color: #333333;
+                    color: #ffffff;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                }
 
-            QPushButton:hover {
-                background-color: #444444;
-                border: 1px solid #888888;
-            }
+                QPushButton:hover {
+                    background-color: #444444;
+                    border: 1px solid #888888;
+                }
 
-            QPushButton:pressed {
-                background-color: #222222;
-            }
-            
-            QScrollBar:vertical {
-                border: none;
-                background: #1e1e1e;
-                width: 14px;
-                margin: 0px 0px 0px 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #424242;
-                min-height: 20px;
-                border-radius: 7px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #4f4f4f;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                border: none;
-                background: none;
-            }
+                QPushButton:pressed {
+                    background-color: #222222;
+                }
+
+                QScrollBar:vertical {
+                    border: none;
+                    background: #1e1e1e;
+                    width: 14px;
+                    margin: 0px 0px 0px 0px;
+                }
+                QScrollBar::handle:vertical {
+                    background: #424242;
+                    min-height: 20px;
+                    border-radius: 7px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background: #4f4f4f;
+                }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    border: none;
+                    background: none;
+                }
             """,
         }
 
