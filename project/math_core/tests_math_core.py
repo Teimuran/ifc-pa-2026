@@ -4,7 +4,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import math
-# Используем абсолютные импорты от корня проекта
 from math_core.vector3 import Vec3
 from math_core.matrix4 import Mat4
 from math_core.bbox import BBox
@@ -111,7 +110,6 @@ class MeshEditor:
         if len(used_indices) == original_count:
             return 0  # Все вершины используются
 
-        # Создаем новую сетку вершин и маппинг старых индексов в новые
         new_vertices = []
         old_to_new: Dict[int, int] = {}
         
@@ -120,7 +118,6 @@ class MeshEditor:
                 old_to_new[old_idx] = len(new_vertices)
                 new_vertices.append(vertex)
 
-        # Переписываем индексы граней
         new_indices = [
             (old_to_new[i0], old_to_new[i1], old_to_new[i2])
             for i0, i1, i2 in self.mesh.indices
@@ -130,10 +127,6 @@ class MeshEditor:
         self.mesh.indices = new_indices
 
         return original_count - len(self.mesh.vertices)
-
-    # ------------------------------------------------------------------ #
-    #  Генерация геометрии                                                 #
-    # ------------------------------------------------------------------ #
 
     def extrude_face(self, face_idx: int, distance: float) -> None:
         """
