@@ -6,3 +6,4 @@ project/hierarchy_output.json
 project/.venv
 project/core/parse/__pycache__
 project/gui/__pycache__
+project/math/__pycache__/
