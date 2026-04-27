@@ -25,6 +25,8 @@ from OCC.Core.TopoDS import TopoDS_Shape
 class IFCViewport(QWidget):
     element_selected_signal = pyqtSignal(str)
 
+    element_moved_signal = pyqtSignal(str, float, float, float)
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -168,64 +170,75 @@ class IFCViewport(QWidget):
             self.display.Context.ClearSelected(True)
 
         self._is_updating_selection = False
+
     def on_canvas_mouse_press(self, event):
-        # Если зажат Ctrl и левая кнопка мыши — инициируем перетаскивание
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.button() == Qt.MouseButton.LeftButton:
             x, y = event.pos().x(), event.pos().y()
-            
-            # Проверяем, есть ли объект под курсором
+
             self.display.Context.MoveTo(x, y, self.display.View, True)
             if self.display.Context.HasDetected():
                 self._dragged_ais = self.display.Context.DetectedInteractive()
                 self._is_object_dragging = True
-                
-                # ИСПРАВЛЕНИЕ: Используем ConvertWithProj и забираем только первые 3 значения
-                self._drag_start_x3d, self._drag_start_y3d, self._drag_start_z3d, _, _, _ = self.display.View.ConvertWithProj(x, y)
-                
-                # Запоминаем исходную трансформацию объекта через Контекст
+
+                # ИСПОЛЬЗУЕМ БЕЗОПАСНУЮ ФУНКЦИЮ (без крашей)
+                self._drag_start_x3d, self._drag_start_y3d, self._drag_start_z3d, _, _, _ = self.display.View.ConvertWithProj(
+                    x, y)
+
                 if self.display.Context.HasLocation(self._dragged_ais):
                     self._original_location = self.display.Context.Location(self._dragged_ais)
                 else:
                     self._original_location = TopLoc_Location()
 
-        # Стандартное поведение (вращение камеры)
         self._original_mousePressEvent(event)
 
     def on_canvas_mouse_move(self, event):
-        # Если мы в режиме перетаскивания объекта
         if self._is_object_dragging and self._dragged_ais:
             x, y = event.pos().x(), event.pos().y()
-            
-            # ИСПРАВЛЕНИЕ: Используем ConvertWithProj
+
+            # ИСПОЛЬЗУЕМ БЕЗОПАСНУЮ ФУНКЦИЮ
             curr_x3d, curr_y3d, curr_z3d, _, _, _ = self.display.View.ConvertWithProj(x, y)
-            
-            # Вычисляем вектор смещения в 3D
-            dx = curr_x3d - self._drag_start_x3d
-            dy = curr_y3d - self._drag_start_y3d
-            dz = curr_z3d - self._drag_start_z3d
-            
-            # Создаем матрицу параллельного переноса
+
+            self._last_dx = curr_x3d - self._drag_start_x3d
+            self._last_dy = curr_y3d - self._drag_start_y3d
+            self._last_dz = curr_z3d - self._drag_start_z3d
+
+            # БЕЗОПАСНАЯ МАТЕМАТИКА (чтобы объект не исчезал)
             translation = gp_Trsf()
-            translation.SetTranslation(gp_Vec(dx, dy, dz))
-            
-            # Накладываем новое смещение на ОРИГИНАЛЬНОЕ положение объекта
-            new_loc = TopLoc_Location(translation) * self._original_location
-            
-            # Применяем к визуальному элементу и обновляем экран
+            translation.SetTranslation(gp_Vec(self._last_dx, self._last_dy, self._last_dz))
+
+            orig_trsf = self._original_location.Transformation()
+            new_trsf = translation.Multiplied(orig_trsf)  # C++ метод умножения
+
+            new_loc = TopLoc_Location(new_trsf)
+
+            # Применение и обновление экрана
             self.display.Context.SetLocation(self._dragged_ais, new_loc)
             self.display.Context.UpdateCurrentViewer()
             return
 
-        # Стандартное поведение
         self._original_mouseMoveEvent(event)
 
     def on_canvas_mouse_release(self, event):
         # Завершаем перетаскивание
         if self._is_object_dragging:
+            if self._dragged_ais:
+
+                moved_guid = None
+                for ais, guid in self.ais_dict.items():
+                    if str(ais.this) == str(self._dragged_ais.this):
+                        moved_guid = guid
+                        break
+
+                if moved_guid and (self._last_dx != 0 or self._last_dy != 0 or self._last_dz != 0):
+                    self.element_moved_signal.emit(moved_guid, self._last_dx, self._last_dy, self._last_dz)
+
+            # Сбрасываем флаги
             self._is_object_dragging = False
             self._dragged_ais = None
             self._original_location = None
+            self._last_dx = 0.0
+            self._last_dy = 0.0
+            self._last_dz = 0.0
             return
-            
-        # Стандартное поведение
+
         self._original_mouseReleaseEvent(event)

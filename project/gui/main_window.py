@@ -1,3 +1,6 @@
+import os
+import shutil
+
 from gui.viewport import IFCViewport
 from core.parse.get_project_hierarchy import get_project_hierarchy
 from core.parse.get_element_geometry import get_element_geometry
@@ -5,6 +8,7 @@ from core.parse.get_properties_by_global_id import get_properties_by_global_id
 from core.file.save_file import save_ifc_model
 from core.edit_data.edit_data import update_element_properties
 from core.edit_data.edit_hierarchy import edit_element_hierarchy
+from core.edit_data.edit_placement import move_ifc_element
 
 import ifcopenshell
 
@@ -339,9 +343,20 @@ class MainWindow(QMainWindow):
             self.bottom_panel.append(f"Сохранение в {file_path}...")
 
             result = save_ifc_model(self.model, file_path)
-            
+
             if result.get("success"):
                 self.bottom_panel.append(f"Успех: Файл сохранен -> {result['path']}")
+                try:
+                    projects = self.model.by_type("IfcProject")
+                    project_id = projects[0].GlobalId if projects else "unknown_project"
+                    cache_dir = f"C:/ifc_cache/ifc_brep_{project_id}"
+
+                    if os.path.exists(cache_dir):
+                        shutil.rmtree(cache_dir)
+                        self.bottom_panel.append(
+                            "Сброс кэша геометрии выполнен. При следующем открытии модель будет перестроена.")
+                except Exception as e:
+                    self.bottom_panel.append(f"Внимание: Не удалось очистить кэш: {e}")
             else:
                 self.bottom_panel.append(f"Ошибка сохранения: {result.get('error')}")
 
@@ -557,6 +572,19 @@ class MainWindow(QMainWindow):
             if found:
                 return found
         return None
+
+    def __on_element_moved(self, guid, dx, dy, dz):
+        if not hasattr(self, 'model'):
+            return
+
+        self.bottom_panel.append(f"Перемещение объекта {guid} на вектор: [{dx:.2f}, {dy:.2f}, {dz:.2f}]")
+
+        result = move_ifc_element(self.model, guid, dx, dy, dz)
+
+        if result.get("success"):
+            self.bottom_panel.append(f"[Core] {result['message']}")
+        else:
+            self.bottom_panel.append(f"[Core Error] {result.get('error')}")
 
     def closeEvent(self, event):
         """this method called before close app"""
